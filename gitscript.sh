@@ -21,6 +21,7 @@ CACHE_PW=true											# cache or not user password (of git)
 SITE_DIR=""												# directory of repository (relative path)
 DB_DIR="data"											# directory where the sql file to import is located
 IS_WORDPRESS=true										# update or not wp_options table of wordpress and wp-config file
+IMPORT_DB_AFTER_PULL=false								# import or not database after pull command
 
 function init {
 	# se viene passato come parametro 'here', viene fatto il "clone" all'interno della cartella stessa
@@ -76,7 +77,7 @@ function pull {
 		echo "wp-config renamed succesfully"
 	fi
 	# import db if his name is setted
-	if [ "$DB_NAME" ]; then
+	if [ "$IMPORT_DB_AFTER_PULL" ]; then
 		# import DB and change wordpress variables
 		cd $DB_DIR
 		mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < $DB_TO_IMPORT;
@@ -90,6 +91,19 @@ function pull {
 		echo "db name is not valid or empty, db will be not imported"
 	fi
 	exit
+}
+
+function dump {
+	if [ "$DB_NAME" ]; then
+		DATE=`date +%Y-%m-%d_%H-%M-%S`						# get date in format yyyy-mm-dd_HH-MM-SS
+		cd $DB_DIR
+		mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > "$DATE.sql"
+		echo "database exported succesfully in $DB_DIR/$DATE.sql"
+	else
+		echo "$DB_NAME is not setted, dump database failed"
+		echo "exiting..."
+		exit
+	fi
 }
 
 function cache_password {
@@ -109,20 +123,20 @@ case $1 in
 		break
 		;;
 	"pull")
-		pull
+		pull $2
 		break
 		;;
 	*)
 		echo "What do you want to do? Write the option number:"
-		select answer in "init" "init here" "pull" "exit"; do
+		select answer in "init" "init here" "pull" "dump database" "exit"; do
 		    case $answer in
 		        "init" ) init; break;;
 		        "init here" ) init here; break;;
 		        "pull" ) pull; break;;
+		        "dump database" ) dump; break;;
 		        "exit" ) echo "exiting..."; exit;;
 				*) echo "invalid option";;
 		    esac
 		done
-		break
 		;;
 esac
