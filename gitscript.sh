@@ -10,7 +10,7 @@
 GIT_URL=""												# git repository url
 BRANCH_TO_PULL="master"									# branch name to checkout/pull
 DIR_TO_CLONE="."										# directory where the repository will be cloned
-PULL_AFTER_CLONE=false									# pull or not after git init
+PULL_AFTER_CLONE=true									# pull or not after git init
 
 DB_USER="root"											# mysql user
 DB_PASSWORD=""											# mysql password
@@ -21,7 +21,7 @@ CACHE_PW=true											# cache or not user password (of git)
 SITE_DIR=""												# directory of repository (relative path)
 DB_DIR="data"											# directory where the sql file to import is located
 IS_WORDPRESS=true										# update or not wp_options table of wordpress and wp-config file
-IMPORT_DB_AFTER_PULL=false								# import or not database after pull command
+IMPORT_DB_AFTER_PULL=true								# import or not database after pull command
 
 function init {
 	# se viene passato come parametro 'here', viene fatto il "clone" all'interno della cartella stessa
@@ -33,8 +33,8 @@ function init {
 		git remote add -t \* -f origin $GIT_URL
 		git checkout master
 		if $PULL_AFTER_CLONE; then
-			echo "script end: pulling latest version"
-			sh $PULL_SCRIPT_NAME
+			echo "git init end: pulling latest version"
+			pull
 		fi
 		exit
 	fi
@@ -49,16 +49,23 @@ function init {
 	# do fetch
 	git fetch --all
 	if $PULL_AFTER_CLONE; then
-		echo "script end: pulling latest version"
-		cd $DIR_TO_CLONE
-		sh $PULL_SCRIPT_NAME
+		echo "git init end: pulling latest version"
+		pull
 	else
-		echo "script end: run the other script if you want to pull latest version"
+		echo "script end"
 	fi
 	exit
 }
 
 function pull {
+	echo "Pulling from repository $GIT_URL from branch $BRANCH_TO_PULL"
+	echo "Are you sure?"
+	select answer in "Yes" "No"; do
+	    case $answer in
+	        "Yes" ) break;;
+	        "No" ) echo "exiting"; exit; break;;
+	    esac
+	done
 	# enable or not git credential cache
 	cache_password
 	# git fetch
@@ -78,6 +85,14 @@ function pull {
 	fi
 	# import db if his name is setted
 	if [ "$IMPORT_DB_AFTER_PULL" ]; then
+		echo "IMPORT_DB_AFTER_PULL variable is set to TRUE"
+		echo "If you continue $DB_TO_IMPORT (in $DB_DIR directory) will be imported in $DB_NAME database, are you sure?"
+		select answer in "Yes" "No"; do
+		    case $answer in
+		        "Yes" ) break;;
+		        "No" ) echo "exiting"; exit; break;;
+		    esac
+		done
 		# import DB and change wordpress variables
 		cd $DB_DIR
 		mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < $DB_TO_IMPORT;
@@ -96,9 +111,21 @@ function pull {
 function dump {
 	if [ "$DB_NAME" ]; then
 		DATE=`date +%Y-%m-%d_%H-%M-%S`						# get date in format yyyy-mm-dd_HH-MM-SS
-		cd $DB_DIR
-		mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > "$DATE.sql"
+		#cd $DB_DIR
+		mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > "$DB_DIR/$DATE.sql"
 		echo "database exported succesfully in $DB_DIR/$DATE.sql"
+		echo "Do you want to commit and push exported database?"
+		select yn in "Yes" "No"; do
+		    case $yn in
+		        "Yes" ) 
+					git add $DB_DIR/$DATE.sql
+					git commit -m 'mysqldump'
+					git push --all
+					echo "push on $BRANCH_TO_PULL successfully"
+					break;;
+		        "No" ) break;;
+		    esac
+		done
 	else
 		echo "$DB_NAME is not setted, dump database failed"
 		echo "exiting..."
