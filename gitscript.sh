@@ -26,7 +26,7 @@ IMPORT_DB_AFTER_PULL=true								# import or not database after pull command
 function init {
 	# se viene passato come parametro 'here', viene fatto il "clone" all'interno della cartella stessa
 	# es. sh gitinit.sh here
-	if [ "$1" = "here" ]; then
+	if [ "$1" = "here" ] || [ "$DIR_TO_CLONE" = "." ]; then
 		git init .
 		# enable or not git credential cache
 		cache_password
@@ -39,7 +39,19 @@ function init {
 		exit
 	fi
 
-	mkdir $DIR_TO_CLONE
+	if [ -d "$DIR_TO_CLONE" ]; then
+		# Control will enter here if $DIRECTORY exists.
+		echo "Directory just exists, do you want continue?. Clone on non-empty folder will fail!"
+		askYN
+		if ! $AREYOUSURE; then
+			echo "exiting..."; exit;
+		else
+			cd $DIR_TO_CLONE
+		fi
+	else
+		mkdir $DIR_TO_CLONE
+	fi
+
 	# clone repository
 	git clone $GIT_URL $DIR_TO_CLONE
 	# go to the directory with the cloned repository
@@ -48,24 +60,24 @@ function init {
 	git checkout master
 	# do fetch
 	git fetch --all
-	if $PULL_AFTER_CLONE; then
-		echo "git init end: pulling latest version"
-		pull
-	else
-		echo "script end"
+	if [ "$IS_WORDPRESS" ]; then
+		askYN "Do you want change wp-config files?"
+		if ! $AREYOUSURE; then
+			mv wp-config.php wp-config.development.php
+			mv wp-config.production.php wp-config.php
+			echo "wp-config renamed succesfully"
+		fi
 	fi
+	echo "done"
 	exit
 }
 
 function pull {
 	echo "Pulling from repository $GIT_URL from branch $BRANCH_TO_PULL"
-	echo "Are you sure?"
-	select answer in "Yes" "No"; do
-	    case $answer in
-	        "Yes" ) break;;
-	        "No" ) echo "exiting"; exit; break;;
-	    esac
-	done
+	askYN "Continue?"
+	if ! $AREYOUSURE; then
+		echo "exiting..."; exit;
+	fi
 	# enable or not git credential cache
 	cache_password
 	# git fetch
@@ -79,25 +91,26 @@ function pull {
 		cd $SITE_DIR
 	fi
 	if [ "$IS_WORDPRESS" ]; then
-		mv wp-config.php wp-config.development.php
-		mv wp-config.production.php wp-config.php
-		echo "wp-config renamed succesfully"
+		askYN "Do you want change wp-config files?"
+		if ! [ "$AREYOUSURE" ]; then
+			mv wp-config.php wp-config.development.php
+			mv wp-config.production.php wp-config.php
+			echo "wp-config renamed succesfully"
+		fi
 	fi
 	# import db if his name is setted
 	if [ "$IMPORT_DB_AFTER_PULL" ]; then
 		echo "IMPORT_DB_AFTER_PULL variable is set to TRUE"
-		echo "If you continue $DB_TO_IMPORT (in $DB_DIR directory) will be imported in $DB_NAME database, are you sure?"
-		select answer in "Yes" "No"; do
-		    case $answer in
-		        "Yes" ) break;;
-		        "No" ) echo "exiting"; exit; break;;
-		    esac
-		done
-		# import DB and change wordpress variables
+		echo "If you continue $DB_TO_IMPORT (in $DB_DIR directory) will be imported in $DB_NAME database"
+		askYN "Are you sure?"
+		if ! $AREYOUSURE; then
+			echo "exiting..."; exit;
+		fi
 		cd $DB_DIR
 		mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < $DB_TO_IMPORT;
 		if $IS_WORDPRESS; then
-			mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "UPDATE wp_options SET option_value = '$SITE_URL' WHERE option_name = 'siteurl' OR option_name = 'home';"
+			QUERY="UPDATE wp_options SET option_value = '$SITE_URL' WHERE option_name = 'siteurl' OR option_name = 'home';"
+			mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "$QUERY"
 			echo "db imported and siteurl updated"
 		else
 			echo "db imported"
@@ -114,18 +127,28 @@ function dump {
 		#cd $DB_DIR
 		mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > "$DB_DIR/$DATE.sql"
 		echo "database exported succesfully in $DB_DIR/$DATE.sql"
-		echo "Do you want to commit and push exported database?"
-		select yn in "Yes" "No"; do
-		    case $yn in
-		        "Yes" ) 
-					git add $DB_DIR/$DATE.sql
-					git commit -m 'mysqldump'
-					git push --all
-					echo "push on $BRANCH_TO_PULL successfully"
-					break;;
-		        "No" ) break;;
-		    esac
-		done
+		read -p "Do you want to commit and push exported database? (y/N) " yn
+	    case $yn in
+	        [Yy]* ) 
+				git add $DB_DIR/$DATE.sql
+				git commit -m 'mysqldump'
+				git push --all
+				echo "push on $BRANCH_TO_PULL successfully"
+				;;
+	        [Nn]*|* ) ;;
+	    esac
+		#echo "Do you want to commit and push exported database?"
+		#select yn in "Yes" "No"; do
+		#    case $yn in
+		#        "Yes" ) 
+		#			git add $DB_DIR/$DATE.sql
+		#			git commit -m 'mysqldump'
+		#			git push --all
+		#			echo "push on $BRANCH_TO_PULL successfully"
+		#			break;;
+		#        "No" ) break;;
+		#    esac
+		#done
 	else
 		echo "$DB_NAME is not setted, dump database failed"
 		echo "exiting..."
@@ -142,7 +165,33 @@ function cache_password {
 	fi
 }
 
+
+function askYN {
+	if [[ "$1" ]] && [[ "$1" != "noecho" ]]; then
+		ECHOSTRING="$1"
+	else
+		ECHOSTRING=""
+	fi
+	echo -n -e "$1 (y/N)\n"
+	read -p "" yynn
+	case $yynn in
+        [Yy]* ) AREYOUSURE=true; ;;
+        [Nn]*|* ) AREYOUSURE=false; ;;
+        #* ) echo "Please answer yes or no.";;
+    esac
+}
+
 ### BODY ###
+
+# while true; do
+#     read -p "Are you idiot? (y/n) " yn
+#     case $yn in
+#         [Yy]* ) areYouSure; echo "$AREYOUSURE"; ;;
+#         [Nn]* ) echo "you lie!"; exit;;
+#         * ) echo "Please answer yes or no.";;
+#     esac
+# done
+# exit
 
 case $1 in
 	"init")
@@ -152,6 +201,9 @@ case $1 in
 	"pull")
 		pull $2
 		break
+		;;
+	"askYN")
+		askYN "Continue?"
 		;;
 	*)
 		echo "What do you want to do? Write the option number:"
