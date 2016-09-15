@@ -60,14 +60,8 @@ function init {
 	git checkout master
 	# do fetch
 	git fetch --all
-	if [ "$IS_WORDPRESS" ]; then
-		askYN "Do you want change wp-config files?"
-		if ! $AREYOUSURE; then
-			mv wp-config.php wp-config.development.php
-			mv wp-config.production.php wp-config.php
-			echo "wp-config renamed succesfully"
-		fi
-	fi
+	# change config.php file from development to production version
+	changeConfigFile
 	echo "done"
 	exit
 }
@@ -90,14 +84,8 @@ function pull {
 	if [ "$SITE_DIR" ]; then
 		cd $SITE_DIR
 	fi
-	if [ "$IS_WORDPRESS" ]; then
-		askYN "Do you want change wp-config files?"
-		if ! [ "$AREYOUSURE" ]; then
-			mv wp-config.php wp-config.development.php
-			mv wp-config.production.php wp-config.php
-			echo "wp-config renamed succesfully"
-		fi
-	fi
+	# change config.php file from development to production version
+	changeConfigFile
 	# import db if his name is setted
 	if [ "$IMPORT_DB_AFTER_PULL" ]; then
 		echo "IMPORT_DB_AFTER_PULL variable is set to TRUE"
@@ -137,22 +125,45 @@ function dump {
 				;;
 	        [Nn]*|* ) ;;
 	    esac
-		#echo "Do you want to commit and push exported database?"
-		#select yn in "Yes" "No"; do
-		#    case $yn in
-		#        "Yes" ) 
-		#			git add $DB_DIR/$DATE.sql
-		#			git commit -m 'mysqldump'
-		#			git push --all
-		#			echo "push on $BRANCH_TO_PULL successfully"
-		#			break;;
-		#        "No" ) break;;
-		#    esac
-		#done
 	else
 		echo "$DB_NAME is not setted, dump database failed"
 		echo "exiting..."
 		exit
+	fi
+}
+
+function importdb {
+	read -e -p "which file do you want to import? " SQLFILE
+	# if ! [ -f $SQLFILE ]; then
+	# 	echo "file doens't exist"
+	# 	importdb
+	# 	return 0
+	# fi
+	askYN "Database name is $DB_NAME, it's correct?"
+	if ! $AREYOUSURE; then
+		read -p "What is the database name?" DB_NAME
+	fi
+	askYN "Are you sure to import $SQLFILE to $DB_NAME?"
+	mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < $SQLFILE;
+	changeConfigFile
+	updateSiteUrl
+	echo "exiting..."
+}
+
+function updateSiteUrl {
+	askYN "Do you want update siteurl value?"
+	if $AREYOUSURE; then
+		QUERY="UPDATE wp_options SET option_value = '$SITE_URL' WHERE option_name = 'siteurl' OR option_name = 'home';"
+		mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "$QUERY"
+	fi
+}
+
+function changeConfigFile {
+	askYN "Do you want change wp-config files?"
+	if $AREYOUSURE; then
+		mv wp-config.php wp-config.development.php
+		mv wp-config.production.php wp-config.php
+		echo "wp-config renamed succesfully"
 	fi
 }
 
@@ -183,16 +194,6 @@ function askYN {
 
 ### BODY ###
 
-# while true; do
-#     read -p "Are you idiot? (y/n) " yn
-#     case $yn in
-#         [Yy]* ) areYouSure; echo "$AREYOUSURE"; ;;
-#         [Nn]* ) echo "you lie!"; exit;;
-#         * ) echo "Please answer yes or no.";;
-#     esac
-# done
-# exit
-
 case $1 in
 	"init")
 		init $2
@@ -207,12 +208,14 @@ case $1 in
 		;;
 	*)
 		echo "What do you want to do? Write the option number:"
-		select answer in "init" "init here" "pull" "dump database" "exit"; do
+		select answer in "init" "init here" "pull" "dump database" "import database" "update siteurl" "exit"; do
 		    case $answer in
 		        "init" ) init; break;;
 		        "init here" ) init here; break;;
 		        "pull" ) pull; break;;
 		        "dump database" ) dump; break;;
+		        "import database" ) importdb; break;;
+				"update siteurl" ) updateSiteUrl; break;;
 		        "exit" ) echo "exiting..."; exit;;
 				*) echo "invalid option";;
 		    esac
