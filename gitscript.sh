@@ -177,7 +177,7 @@ function changeConfigFile {
 	fi
 	if $AREYOUSURE; then
 		if [ $MAINTEIN_BOTH ]; then
-			cp -a $WPCONFIG_TORENAME wp-config.php
+			cp -a $WPCONFIG_TOUSE wp-config.php
 		else
 			cp -a wp-config.php $WPCONFIG_TORENAME
 			cp -a $WPCONFIG_TOUSE wp-config.php
