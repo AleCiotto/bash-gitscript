@@ -151,7 +151,7 @@ function importdb {
 }
 
 function updateSiteUrl {
-	askYN "Do you want update siteurl value?"
+	askYN "Do you want update siteurl value? (For Wordpress sites only)"
 	if $AREYOUSURE; then
 		QUERY="UPDATE wp_options SET option_value = '$SITE_URL' WHERE option_name = 'siteurl' OR option_name = 'home';"
 		mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "$QUERY"
@@ -159,11 +159,32 @@ function updateSiteUrl {
 }
 
 function changeConfigFile {
-	askYN "Do you want change wp-config files?"
+	# askYN "Do you want change wp-config files? (For Wordpress sites only)"
+	if [ -f "wp-config.development.php" ] && [ -f "wp-config.production.php" ]; then
+		read -e -p "which file do you want to use as wp-config? " WPCONFIG_TOUSE
+		MAINTEIN_BOTH=true
+	else
+		if [ -f "wp-config.development.php" ]; then
+			askYN "You are using PRODUCTION version of wp-config, do you want change it?"
+			WPCONFIG_TOUSE="wp-config.development.php"
+			WPCONFIG_TORENAME="wp-config.production.php"
+		fi
+		if [ -f "wp-config.production.php" ]; then
+			askYN "You are using DEVELOPMENT version of wp-config, do you want change it?"
+			WPCONFIG_TOUSE="wp-config.production.php"
+			WPCONFIG_TORENAME="wp-config.development.php"
+		fi  
+	fi
 	if $AREYOUSURE; then
-		mv wp-config.php wp-config.development.php
-		mv wp-config.production.php wp-config.php
+		if [ $MAINTEIN_BOTH ]; then
+			cp -a $WPCONFIG_TORENAME wp-config.php
+		else
+			cp -a wp-config.php $WPCONFIG_TORENAME
+			cp -a $WPCONFIG_TOUSE wp-config.php
+		fi
 		echo "wp-config renamed succesfully"
+	else
+		echo "wp-config not changed"
 	fi
 }
 
@@ -208,7 +229,7 @@ case $1 in
 		;;
 	*)
 		echo "What do you want to do? Write the option number:"
-		select answer in "init" "init here" "pull" "dump database" "import database" "update siteurl" "exit"; do
+		select answer in "init" "init here" "pull" "dump database" "import database" "update siteurl" "change wp-config" "exit"; do
 		    case $answer in
 		        "init" ) init; break;;
 		        "init here" ) init here; break;;
@@ -216,6 +237,7 @@ case $1 in
 		        "dump database" ) dump; break;;
 		        "import database" ) importdb; break;;
 				"update siteurl" ) updateSiteUrl; break;;
+				"change wp-config" ) changeConfigFile; break;;
 		        "exit" ) echo "exiting..."; exit;;
 				*) echo "invalid option";;
 		    esac
